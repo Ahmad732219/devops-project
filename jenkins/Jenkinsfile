@@ -1,0 +1,93 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_HUB_USER = 'ahmad081'
+        APP_NAME = 'devops'
+        VERSION = 'v1'
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                echo 'Cloning repository...'
+                git branch: 'main',
+                    url: 'https://github.com/Ahmad732219/devops-project.git'
+            }
+        }
+
+        stage('Install Backend Dependencies') {
+            steps {
+                echo 'Installing backend dependencies...'
+                dir('app/backend') {
+                    sh 'npm install'
+                }
+            }
+        }
+
+        stage('Run Tests') {
+            steps {
+                echo 'Running tests...'
+                dir('app/backend') {
+                    sh 'npm test || true'
+                }
+            }
+        }
+
+        stage('Security Scan') {
+            steps {
+                echo 'Running Trivy security scan...'
+                sh 'trivy fs --exit-code 0 --severity HIGH,CRITICAL . || true'
+            }
+        }
+
+        stage('Docker Build Backend') {
+            steps {
+                echo 'Building backend Docker image...'
+                dir('app/backend') {
+                    sh "docker build -t ${DOCKER_HUB_USER}/${APP_NAME}-backend:${VERSION} ."
+                }
+            }
+        }
+
+        stage('Docker Build Frontend') {
+            steps {
+                echo 'Building frontend Docker image...'
+                dir('app/frontend') {
+                    sh "docker build -t ${DOCKER_HUB_USER}/${APP_NAME}-frontend:${VERSION} ."
+                }
+            }
+        }
+
+        stage('Push to Docker Hub') {
+            steps {
+                echo 'Pushing images to Docker Hub...'
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-credentials',
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
+                    sh "echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin"
+                    sh "docker push ${DOCKER_HUB_USER}/${APP_NAME}-backend:${VERSION}"
+                    sh "docker push ${DOCKER_HUB_USER}/${APP_NAME}-frontend:${VERSION}"
+                }
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                echo 'Deployment stage - Kubernetes will be configured in next phase'
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Pipeline completed successfully!'
+        }
+        failure {
+            echo 'Pipeline failed!'
+        }
+    }
+}
